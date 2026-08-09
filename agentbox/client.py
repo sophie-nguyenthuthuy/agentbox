@@ -33,11 +33,19 @@ from ._internal import quiet
 from .policy import Policy
 from .trace import TraceWriter, read_trace
 
-__all__ = ["PolicyViolation", "ReplayDivergence", "Session", "session"]
+__all__ = ["CheckpointError", "PolicyViolation", "ReplayDivergence", "Session", "session"]
 
 
 class ReplayDivergence(RuntimeError):
     """The live run issued a different effect sequence than the recording."""
+
+
+class CheckpointError(RuntimeError):
+    """A requested pre-mutation checkpoint could not be taken.
+
+    Fails closed: the mutating effect that triggered the checkpoint is
+    blocked — a run that was promised to be undoable never half-happens.
+    """
 
 
 class PolicyViolation(PermissionError):
@@ -55,17 +63,32 @@ def _sha(data) -> str:
 
 
 class Session:
-    def __init__(self, policy: Policy, trace_path: str, mode: str = "record", report_path=None):
+    def __init__(
+        self,
+        policy: Policy,
+        trace_path: str,
+        mode: str = "record",
+        report_path=None,
+        checkpoint: bool = False,
+    ):
         if mode not in ("record", "replay"):
             raise ValueError(f"unknown mode {mode!r}")
         self.policy = policy
         self.mode = mode
         self.diverged = None
         self.report_path = report_path
+        self.checkpoint = checkpoint
+        self._checkpointed = False
         if mode == "record":
             self.writer = TraceWriter(trace_path)
         else:
-            self.entries = [e for e in read_trace(trace_path) if e["kind"] in ("effect", "observe")]
+            # hook.* effects are runner infrastructure (e.g. --checkpoint), not
+            # agent behavior — replay compares agent-issued effects only.
+            self.entries = [
+                e
+                for e in read_trace(trace_path)
+                if e["kind"] in ("effect", "observe") and not e["op"].startswith("hook.")
+            ]
             self.cursor = 0
             if report_path:
                 atexit.register(self._write_report)
@@ -81,6 +104,7 @@ class Session:
             os.environ["AGENTBOX_TRACE"],
             mode=os.environ.get("AGENTBOX_MODE", "record"),
             report_path=os.environ.get("AGENTBOX_REPORT"),
+            checkpoint=os.environ.get("AGENTBOX_CHECKPOINT") == "1",
         )
 
     def _write_report(self):
@@ -129,6 +153,48 @@ class Session:
         else:
             self.expect("observe", op, args)
 
+    # -- pre-mutation checkpoint (snapback) -------------------------------
+
+    def _pre_mutation(self, tool: str, detail: str):
+        """Take one snapback snapshot before the first mutating effect.
+
+        Lazy: runs that never mutate cost nothing. Recorded as a ``hook.*``
+        effect so the checkpoint id lives inside the hash-chained trace; on
+        replay nothing runs (hook effects are filtered from expectations).
+        The snapback subprocess gets a scrubbed environment — without it, the
+        injected sitecustomize shim would arm a sandbox inside snapback and
+        deny its own snapshot IO.
+        """
+        if not self.checkpoint or self.mode != "record" or self._checkpointed:
+            return
+
+        def do():
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("PYTHONPATH", "NODE_OPTIONS") and not k.startswith("AGENTBOX")
+            }
+            try:
+                p = subprocess.run(
+                    ["snapback", "snap", "-m", f"agentbox: before {tool} {detail}"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                )
+            except FileNotFoundError:
+                raise CheckpointError(
+                    "checkpoint requested but snapback is not on PATH "
+                    "(pip install snapback-cli)"
+                ) from None
+            if p.returncode != 0:
+                raise CheckpointError(
+                    f"snapback checkpoint failed: {p.stderr.strip() or p.stdout.strip()}"
+                )
+            return {"snapshot": p.stdout.strip().rsplit(" ", 1)[-1], "undo": "snapback undo"}
+
+        self.effect("hook.checkpoint", {"tool": tool, "detail": detail}, do)
+        self._checkpointed = True
+
     # -- effects ---------------------------------------------------------
 
     def read_text(self, path) -> str:
@@ -144,6 +210,7 @@ class Session:
     def write_text(self, path, text: str) -> dict:
         if not self.policy.allows_write(os.path.abspath(path)):
             raise PolicyViolation(f"policy denies write {path}")
+        self._pre_mutation("fs.write_text", str(path))
 
         def do():
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -174,6 +241,7 @@ class Session:
         argv = [str(a) for a in argv]
         if not self.policy.allows_exec(argv):
             raise PolicyViolation(f"policy denies exec {argv[0]}")
+        self._pre_mutation("proc.run", argv[0])
 
         def do():
             p = subprocess.run(argv, capture_output=True, text=True)

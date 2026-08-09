@@ -1,0 +1,5 @@
+# Policy for checkpoint_agent.py — the agent may rewrite ./data and ./out.
+# That's exactly why you want --checkpoint: allowed ≠ wanted.
+read:  ./data
+write: ./data
+write: ./out

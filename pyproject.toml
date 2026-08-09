@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentbox-runtime"
-version = "0.2.0"
+version = "0.3.0"
 description = "Policy-sandboxed runtime for AI agent processes: enforce a policy file, capture a tamper-evident trace, deterministically replay any run."
 readme = "README.md"
 license = { text = "MIT" }

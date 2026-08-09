@@ -57,6 +57,12 @@ def main(argv=None) -> int:
     sp.add_argument("-p", "--policy", default="agentbox.policy")
     sp.add_argument("-t", "--trace", default="trace.jsonl")
     sp.add_argument("--observe", action="store_true", help="log violations instead of blocking")
+    sp.add_argument(
+        "--checkpoint",
+        action="store_true",
+        help="take a snapback snapshot before the agent's first mutating effect, "
+        "so `snapback undo` reverts the run (needs: pip install snapback-cli)",
+    )
     sp.add_argument("command", nargs=argparse.REMAINDER)
 
     sp = sub.add_parser("replay", help="deterministically replay a recorded trace")
@@ -82,13 +88,29 @@ def main(argv=None) -> int:
         return 0
 
     if ns.cmd == "run":
-        res = _run(_command(ns), ns.policy, ns.trace, mode="record", enforce=not ns.observe)
-        counts = collections.Counter(e["kind"] for e in read_trace(ns.trace))
+        res = _run(
+            _command(ns),
+            ns.policy,
+            ns.trace,
+            mode="record",
+            enforce=not ns.observe,
+            checkpoint=ns.checkpoint,
+        )
+        entries = read_trace(ns.trace)
+        counts = collections.Counter(e["kind"] for e in entries)
         print(
             f"agentbox: recorded {counts.get('effect', 0)} effects, "
             f"{counts.get('observe', 0)} observations, {counts.get('deny', 0)} denials "
             f"-> {ns.trace}"
         )
+        snap = next(
+            (e for e in entries if e["kind"] == "effect" and e["op"] == "hook.checkpoint"), None
+        )
+        if snap and snap.get("result"):
+            print(
+                f"agentbox: checkpoint {snap['result']['snapshot']} taken before first "
+                f"mutation — `snapback undo` reverts this run"
+            )
         return res.returncode
 
     if ns.cmd == "replay":

@@ -104,6 +104,47 @@ r    = box.random()   # frozen on replay
 box.write_text("out/report.md", text.upper())
 ```
 
+## Undo what the agent did
+
+Policy says what the agent *may* touch — but allowed ≠ wanted. With
+[snapback](https://github.com/sophie-nguyenthuthuy/snapback) installed,
+`--checkpoint` snapshots the working tree right before the agent's **first
+mutating effect**, so every recorded run is one command away from never
+having happened:
+
+```bash
+pip install snapback-cli
+
+$ agentbox run --checkpoint -p agentbox.policy -- python agent.py
+agent done: rewrote data/notes.txt, wrote out/report.md
+agentbox: recorded 4 effects, 0 observations, 0 denials -> trace.jsonl
+agentbox: checkpoint 20260809-143103 taken before first mutation — `snapback undo` reverts this run
+
+$ snapback diff              # what did it actually change?
+A out/report.md
+M data/notes.txt
+
+$ snapback undo              # put it all back
+snapback: restored 20260809-143103
+```
+
+Properties worth knowing:
+
+- **Lazy** — the snapshot is taken on the first `write_text`/`run`, not at
+  startup. Runs that only read cost nothing.
+- **In the chain** — the checkpoint is recorded as a `hook.checkpoint` effect
+  in the same hash-chained trace, so "what can I roll back to" is part of the
+  same tamper-evident record as "what did it do" (`agentbox show` shows it).
+- **Fails closed** — if the snapshot can't be taken, the mutation is blocked
+  with `CheckpointError` rather than proceeding un-undoable.
+- **Replay-transparent** — `agentbox replay` neither re-snapshots nor
+  diverges on the hook entry.
+- Drop a `snapback.toml` with `ignore = ["trace.jsonl"]` next to your agent
+  so rolling back the agent's writes never truncates the audit trail
+  (see `examples/`).
+
+Full demo: [examples/checkpoint_agent.py](examples/checkpoint_agent.py).
+
 ## Node agents
 
 The same runner sandboxes Node processes — no extra install:

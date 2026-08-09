@@ -1,0 +1,4 @@
+# snapback config for the checkpoint demo: roll back the agent's writes,
+# but never truncate the audit trail.
+[snapshot]
+ignore = ["trace.jsonl"]

@@ -42,7 +42,7 @@ def _pkg_dir() -> str:
     return os.path.dirname(os.path.realpath(__file__))
 
 
-def build_env(policy, policy_path, trace_path, mode, enforce, report_path, root) -> dict:
+def build_env(policy, policy_path, trace_path, mode, enforce, report_path, root, checkpoint=False) -> dict:
     env = {k: os.environ[k] for k in _SAFE_ENV if k in os.environ}
     for k, v in os.environ.items():
         if policy.allows_env(k):
@@ -64,6 +64,8 @@ def build_env(policy, policy_path, trace_path, mode, enforce, report_path, root)
     env["AGENTBOX_MODE"] = mode
     env["AGENTBOX_ENFORCE"] = "1" if enforce else "0"
     env["AGENTBOX_ROOT"] = root
+    if checkpoint and mode == "record":
+        env["AGENTBOX_CHECKPOINT"] = "1"
     if report_path:
         env["AGENTBOX_REPORT"] = os.path.abspath(report_path)
     return env
@@ -77,6 +79,7 @@ def run(
     enforce=True,
     cwd=None,
     capture=False,
+    checkpoint=False,
 ) -> RunResult:
     if mode not in ("record", "replay"):
         raise ValueError(f"unknown mode {mode!r}")
@@ -94,6 +97,7 @@ def run(
                 "policy_sha256": policy.sha256,
                 "agentbox": __version__,
                 "python": sys.version.split()[0],
+                "checkpoint": bool(checkpoint),
             },
         )
     else:
@@ -108,7 +112,9 @@ def run(
         fd, report_path = tempfile.mkstemp(prefix="agentbox-report-", suffix=".json")
         os.close(fd)
 
-    env = build_env(policy, policy_path, trace_path, mode, enforce, report_path, root)
+    env = build_env(
+        policy, policy_path, trace_path, mode, enforce, report_path, root, checkpoint=checkpoint
+    )
     proc = subprocess.run(list(argv), env=env, cwd=root, capture_output=capture, text=True)
 
     result = RunResult(

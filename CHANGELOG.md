@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-08-09
+
+- **`agentbox run --checkpoint`** — pre-tool-use snapshot via
+  [snapback](https://github.com/sophie-nguyenthuthuy/snapback): a lazy
+  `snapback snap` right before the agent's first mutating effect
+  (`fs.write_text` / `proc.run`), recorded as a `hook.checkpoint` effect in
+  the hash-chained trace. `snapback undo` reverts the run; fails closed
+  (`CheckpointError`) if the snapshot can't be taken; replay filters `hook.*`
+  entries so recorded runs replay unchanged and never re-snapshot. Demo in
+  `examples/checkpoint_agent.py`.
+
 ## 0.2.0 — 2026-08-09
 
 - **Node runtime shim** (`agentbox run -- node agent.js` just works): a
