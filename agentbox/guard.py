@@ -114,6 +114,9 @@ def install(policy, session=None, mode="record", enforce=True):
                 return
             if rp.endswith((".py", ".pyc", ".pth", ".pyi")) and in_syspath(rp):
                 return
+            argv = getattr(sys, "argv", None)
+            if argv and argv[0] and rp == os.path.realpath(argv[0]):
+                return  # the entry script itself (early probes can precede sys.path[0])
         if writing:
             if policy.allows_write(rp):
                 observe("fs.open_write", {"path": p})
