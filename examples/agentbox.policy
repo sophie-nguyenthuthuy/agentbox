@@ -1,0 +1,4 @@
+# What the demo agent may touch. Everything else is denied.
+allow: read ./data
+allow: write ./out
+exec: echo
