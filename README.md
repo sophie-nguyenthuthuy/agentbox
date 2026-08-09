@@ -104,6 +104,34 @@ r    = box.random()   # frozen on replay
 box.write_text("out/report.md", text.upper())
 ```
 
+## Node agents
+
+The same runner sandboxes Node processes — no extra install:
+
+```bash
+agentbox run    -p agentbox.policy -- node agent.js
+agentbox replay -p agentbox.policy -- node agent.js
+```
+
+A CommonJS shim is injected via `NODE_OPTIONS --require`; it enforces the
+same policy file (fs, net, child_process, env scrub), appends to the **same
+hash chain** the runner starts, and exposes the SDK as `globalThis.agentbox`:
+
+```js
+const box = globalThis.agentbox;
+const text  = box.readText("data/notes.txt");
+const resp  = await box.get("https://api.github.com/repos/x/y");
+const out   = box.run(["git", "status"]);
+const t     = box.now();      // integer ms, frozen on replay
+const r     = box.random();   // integer in [0, 2^48), frozen on replay
+box.writeText("out/report.md", text.toUpperCase());
+```
+
+Caveat: the Node guard monkeypatches `fs`/`net`/`child_process` — it contains
+well-behaved agents and prompt-injected tool calls, but unlike CPython's
+irremovable audit hooks it is not a boundary against code that deliberately
+unpatches it. Hardening it (Node permission model flags) is a welcome PR.
+
 ## Threat model, honestly
 
 agentbox is an **interpreter-level** sandbox for Python processes, not a
@@ -147,7 +175,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Development
 
 ```bash
-python -m pytest        # 49 tests, all stdlib + pytest
+python -m pytest        # 59 tests, all stdlib + pytest (Node tests auto-skip without node)
 ```
 
 MIT © Sophie Nguyen Thu Thuy

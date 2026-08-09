@@ -57,6 +57,8 @@ def build_env(policy, policy_path, trace_path, mode, enforce, report_path, root)
     env["PYTHONPATH"] = os.pathsep.join(parts)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONHASHSEED"] = "0"
+    node_shim = os.path.join(_pkg_dir(), "_inject", "node", "agentbox.cjs")
+    env["NODE_OPTIONS"] = f'--require "{node_shim}"'
     env["AGENTBOX_POLICY"] = os.path.abspath(policy_path)
     env["AGENTBOX_TRACE"] = os.path.abspath(trace_path)
     env["AGENTBOX_MODE"] = mode

@@ -12,15 +12,19 @@ its enforcement point in `agentbox/guard.py`, and add tests in
 
 ## One language runtime per PR
 
-The policy file, trace format, and replay engine are runtime-agnostic; only
-the in-process guard + SDK are Python today. A new runtime needs:
+The policy file, trace format, and replay engine are runtime-agnostic. Python
+and Node runtimes exist today. A new runtime needs:
 
-1. an injection mechanism (Node: `NODE_OPTIONS=--require`, Deno: permission
-   flags computed from the policy),
-2. an effects SDK that appends to the same hash-chained JSONL trace,
+1. an injection mechanism (Node uses `NODE_OPTIONS=--require`; Deno could
+   compute permission flags from the policy; Bun has `--preload`),
+2. an effects SDK that appends to the same hash-chained JSONL trace
+   (canonical JSON: sorted keys, no spaces, raw unicode — and only integers
+   for numeric trace values so they round-trip identically everywhere),
 3. the replay cursor (match `(op, args)` in order, serve recorded results).
 
-Put it under `runtimes/<lang>/` with its own test suite.
+See `agentbox/_inject/node/agentbox.cjs` for the reference port (~400 lines,
+zero deps) and `tests/test_node_runtime.py` for the conformance tests —
+including the cross-language hash-chain check every runtime must pass.
 
 ## One trace exporter per PR
 

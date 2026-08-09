@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-08-09
+
+- **Node runtime shim** (`agentbox run -- node agent.js` just works): a
+  zero-dependency CommonJS guard injected via `NODE_OPTIONS --require` that
+  enforces the same policy file (fs / net / child_process / env scrub),
+  appends to the **same hash chain** the Python runner starts (cross-language
+  chain verifies with `agentbox verify`), and exposes the effects SDK as
+  `globalThis.agentbox` with full deterministic replay. Honest caveat: the
+  Node guard is monkeypatch-based, weaker than CPython's irremovable audit
+  hooks; JS `now()`/`random()` return integers so traced values round-trip
+  byte-identically through Python's canonical JSON.
+- Python guard: exempt the entry script from read policy (spurious deny of
+  the agent's own script in venv installs).
+
 ## 0.1.0 — 2026-08-09
 
 Initial release.
